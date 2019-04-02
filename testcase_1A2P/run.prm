@@ -21,7 +21,7 @@ t        step 4: monte carlo sampling                       (DO_MONTE)
 ==============================================================================
 Less modified entries
 ------------------------------------------------------------------------------
-./extra.tpl                          (EXTRA)
+./extra.ftpl                          (EXTRA)
 
 ph       "ph" for pH titration, "eh" for eh titration       (TITR_TYPE)
 0.0      Initial pH                                         (TITR_PH0)
