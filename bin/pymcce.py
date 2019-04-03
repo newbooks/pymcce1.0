@@ -4,10 +4,14 @@ import sys
 import os
 import numpy as np
 
+
+Delta_PW_warning = 0.1
+
+
 class Env:
     def __init__(self):
         # Hard coded values
-        self.runprm= "run.prm"
+        self.runprm = "run.prm"
         self.version = "PyMCCE 1.0"
         self.fn_conflist1 = "head1.lst"
         self.fn_conflist2 = "head2.lst"
@@ -134,20 +138,19 @@ class Env:
     def print_scaling(self):
         """Print scaling factors."""
         # print self.param
-        print("   Scaling factors:")
-        print("   VDW0  = %.3f" % self.tpl[("SCALING", "VDW0")])
-        print("   VDW1  = %.3f" % self.tpl[("SCALING", "VDW1")])
-        print("   VDW   = %.3f" % self.tpl[("SCALING", "VDW")])
-        print("   TORS  = %.3f" % self.tpl[("SCALING", "TORS")])
-        print("   ELE   = %.3f" % self.tpl[("SCALING", "ELE")])
-        print("   DSOLV = %.3f" % self.tpl[("SCALING", "DSOLV")])
-        print("   Done\n")
+        print("      Scaling factors:")
+        print("      VDW0  = %.3f" % self.tpl[("SCALING", "VDW0")])
+        print("      VDW1  = %.3f" % self.tpl[("SCALING", "VDW1")])
+        print("      VDW   = %.3f" % self.tpl[("SCALING", "VDW")])
+        print("      TORS  = %.3f" % self.tpl[("SCALING", "TORS")])
+        print("      ELE   = %.3f" % self.tpl[("SCALING", "ELE")])
+        print("      DSOLV = %.3f" % self.tpl[("SCALING", "DSOLV")])
         return
 
 
 class Conformer:
     def __init__(self, fields):
-        # from head3.lst
+        # directly from head3.lst
         self.iConf = int(fields[0])
         self.confname = fields[1]
         self.flag = fields[2].lower()
@@ -157,34 +160,49 @@ class Conformer:
         self.pk0 = float(fields[6])
         self.ne = int(fields[7])
         self.nh = int(fields[8])
-        self.vdw0 = float(fields[9]) * env.param[("SCALING", "VDW0")]
-        self.vdw1 = float(fields[10]) * env.param[("SCALING", "VDW1")]
-        self.tors = float(fields[11]) * env.param[("SCALING", "TORS")]
-        self.epol = float(fields[12]) * env.param[("SCALING", "ELE")]
-        self.dsolv = float(fields[13]) * env.param[("SCALING", "DSOLV")]
+        self.vdw0 = float(fields[9]) * env.tpl[("SCALING", "VDW0")]
+        self.vdw1 = float(fields[10]) * env.tpl[("SCALING", "VDW1")]
+        self.tors = float(fields[11]) * env.tpl[("SCALING", "TORS")]
+        self.epol = float(fields[12]) * env.tpl[("SCALING", "ELE")]
+        self.dsolv = float(fields[13]) * env.tpl[("SCALING", "DSOLV")]
         self.extra = float(fields[14])
         self.history = fields[15]
-        # from MC entropy sampling
-        self.entropy = 0.0  # -TS, will be calculated at entropy sampling
-        self.acc_entropy = []
         # needed by MC process
         self.E_self = 0.0  # self energy in head3.lst
         self.E_self_mfe = 0.0  # self energy including pairwise contribution from fixed residues
-        self.counter = 0  # MC counters
-        self.mc_occ = 0.0  # MC calculated occ
-        self.acc_occ = []  # a list of past mc_occ until rest, history is needed for test convergence
-        self.occ_at_points = []  # occ at titration points
         return
+
+    def printme(self):
+        print("%05d %s %c %4.2f %6.3f %5d %5.2f %2d %2d %7.3f %7.3f %7.3f %7.3f %7.3f %7.3f %s" % (self.iConf,
+                                                                                                   self.confname,
+                                                                                                   self.flag,
+                                                                                                   self.occ,
+                                                                                                   self.crg,
+                                                                                                   self.em0,
+                                                                                                   self.pk0,
+                                                                                                   self.ne,
+                                                                                                   self.nh,
+                                                                                                   self.vdw0,
+                                                                                                   self.vdw1,
+                                                                                                   self.tors,
+                                                                                                   self.epol,
+                                                                                                   self.dsolv,
+                                                                                                   self.extra,
+                                                                                                   self.history))
+
 
 class MC_Protein:
     """Monte Carlo Protein data structure."""
+
     def __init__(self):
         print("\n   Initializing Monte Carlo frame strcuture.")
-        self.head3list = []
-        self.confnames = []
+        self.head3list, self.confnames = self.read_head3list()
+        self.pairwise = self.read_pairwise()
+        self.fixed_conformers, self.free_residues = self.group_conformers()
         return
 
     def read_head3list(self):
+        head3list = []
         fname = env.fn_conflist3
         print("      Loading confomer self energy from %s" % fname)
 
@@ -194,19 +212,191 @@ class MC_Protein:
             fields = line.split()
             if len(fields) >= 16:
                 conf = Conformer(fields)
-                self.head3list.append(conf)
+                if conf.flag == "t":
+                    conf.on = False
+                else:
+                    conf.on = True
+                head3list.append(conf)
 
         # validate
-        self.confnames = [x.confname for x in self.head3list]
-        for name in self.confnames:
+        confnames = [x.confname for x in head3list]
+        for name in confnames:
             if len(name) != 14:
                 print("      ERROR: %s is not a conformer name.")
                 sys.exit()
-            occurrence = self.confnames.count(name)
+            occurrence = confnames.count(name)
             if occurrence > 1:
                 print("      ERROR: Conformer %s occurred %d times" % occurrence)
                 sys.exit()
+        return head3list, confnames
+
+    def print_headlist(self):
+        for conf in self.head3list:
+            print("%05d %s %c %4.2f %6.3f %5d %5.2f %2d %2d %7.3f %7.3f %7.3f %7.3f %7.3f %7.3f %s" % (conf.iConf,
+                                                                                                       conf.confname,
+                                                                                                       conf.flag,
+                                                                                                       conf.occ,
+                                                                                                       conf.crg,
+                                                                                                       conf.em0,
+                                                                                                       conf.pk0,
+                                                                                                       conf.ne,
+                                                                                                       conf.nh,
+                                                                                                       conf.vdw0,
+                                                                                                       conf.vdw1,
+                                                                                                       conf.tors,
+                                                                                                       conf.epol,
+                                                                                                       conf.dsolv,
+                                                                                                       conf.extra,
+                                                                                                       conf.history))
         return
+
+    def read_pairwise(self):
+        """Read pairwise interactions from opp files in folder."""
+        folder = env.energy_table
+        print("      Loading pairwise interactions from opp files in folder %s ..." % folder)
+        n_size = len(self.confnames)
+        pairwise = np.zeros((n_size, n_size))
+        for i in range(n_size):
+            conf = self.head3list[i]
+            oppfile = "%s/%s.opp" % (folder, conf.confname)
+            resid_i = conf.confname[:3] + conf.confname[5:11]
+            if os.path.isfile(oppfile):
+                lines = open(oppfile)
+                for line in lines:
+                    fields = line.split()
+                    if len(fields) < 6:
+                        continue
+                    confname = fields[1]
+                    j = self.confnames.index(confname)
+                    if j < 0:
+                        print("      Warning: %s in file %s is not a conformer" % (confname, oppfile))
+                        continue
+
+                    resid_j = confname[:3] + confname[5:11]
+                    if resid_i != resid_j:  # not within a residue
+                        ele = float(fields[2])
+                        vdw = float(fields[3])
+                        pw = ele * env.tpl[("SCALING", "ELE")] + vdw * env.tpl[("SCALING", "VDW")]
+                        pairwise[i][j] = pw
+
+        # Average pairwise after loading
+        for i in range(n_size - 1):
+            for j in range(i + 1, n_size):
+                pw1 = pairwise[i][j]
+                pw2 = pairwise[j][i]
+                if abs(pw1 - pw2) > Delta_PW_warning:
+                    print("         Warning: big pairwise difference between %s: %.3f and %s: %.3f" % (
+                        self.confnames[i],
+                        pw1,
+                        self.confnames[j],
+                        pw2))
+                pairwise[i][j] = pairwise[j][i] = (pw1 + pw2) / 2
+
+        return
+
+    def group_conformers(self):
+        fixed_conformers = []
+        free_residues = []
+        residue_ids = []
+        for confname in self.confnames:
+            resid = confname[:3] + confname[5:11]
+            if resid not in residue_ids:
+                residue_ids.append(resid)
+        self.residues = [[] for i in range(len(residue_ids))]  # residue stores indices to conformers
+        for i in range(len(self.confnames)):
+            confname = self.confnames[i]
+            resid = confname[:3] + confname[5:11]
+            index = residue_ids.index(resid)
+            self.residues[index].append(i)
+
+        # Verify head3list flag and occ; Find free and fixed residues
+        # if total occ of "t" flagged conformers is 1:
+        # the rest conformers will be set to "t 0.00", and this residue is "fixed"
+        # else if total occ of "t" flagged conformers is 0:
+        # if only one conformer is left:
+        # the lone conformer is set to "t 1.00", and this conformer and this residue will be "fixed"
+        # else:
+        #        this residue is "free" and occ of conformers is 0.
+        # otherwise:
+        #    partial fixed occupancy not allowed
+
+        print("      Grouping conformers ...")
+        # Verify flags
+        # Group conformers
+        for res in self.residues:
+            socc = 0.0
+            n_freeconf = len(res)
+            for i in res:
+                if not self.head3list[i].on:
+                    socc += self.head3list[i].occ
+                    n_freeconf -= 1
+                elif abs(self.head3list[i].occ) > 0.001:  # free residue has non-0 occ
+                    print("         %s %c %4.2f -> %s f  0.00 (free conformer initial occ = 0)" % (
+                        self.head3list[i].confname,
+                        self.head3list[i].flag,
+                        self.head3list[i].occ, self.head3list[i].confname))
+                    self.head3list[i].occ = 0.0
+            if abs(socc - 1.0) < 0.001:  # total occ of fixed conformers are 1.0
+                for i in res:
+                    fixed_conformers.append(i)
+                    if self.head3list[i].on:
+                        print("         %s %c %4.2f -> %s t  0.00 (fixed conformers already have occ 1.0)" % (
+                            self.head3list[i].confname,
+                            self.head3list[i].flag, self.head3list[i].occ, self.head3list[i].confname))
+                        self.head3list[i].occ = 0.0
+                        self.head3list[i].on = False
+                        self.head3list[i].flag = "t"
+            elif abs(socc) < 0.001:  # total occ is 0
+                if n_freeconf == 1:
+                    for i in res:
+                        if self.head3list[i].on:
+                            print("         %s %c %4.2f -> %s t  1.00 (single conformer of the residue)" % (
+                                self.head3list[
+                                    i].confname,
+                                self.head3list[
+                                    i].flag,
+                                self.head3list[
+                                    i].occ,
+                                self.head3list[
+                                    i].confname))
+                            self.head3list[i].on = False
+                            self.head3list[i].occ = 1.0
+                            self.head3list[i].flag = "t"
+                            fixed_conformers.append(i)
+                            break  # because only one "f"
+                else:
+                    free_conformers = []
+                    for i in res:
+                        if not self.head3list[i].on:
+                            fixed_conformers.append(i)
+                        else:
+                            free_conformers.append(i)
+                    free_residues.append(free_conformers)
+            else:  # total occ is neither 0 or 1
+                print("      Error: Total residue occupancy is %.2f, 0.00 or 1.00 expected." % socc)
+                for i in res:
+                    self.head3list[i].printme()
+                print("      Exiting ...")
+                sys.exit()
+
+        return fixed_conformers, free_residues
+
+
+def mc_sample(prot, T=monte_t, ph=ph, eh=eh):
+    # get self energy
+    # make big list
+
+    # loop independent runs
+    # randomize a state
+    # obtain a complete state
+    #
+    # MC sampling
+        # choose new state
+        # evaluate
+    
+
+    return
+
 
 env = Env()
 
