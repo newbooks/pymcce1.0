@@ -459,7 +459,7 @@ def mc_sample(prot, T=298.15, ph=7.0, eh=0.0):
         # MC sampling
         for iterations in range(env.prm("MONTE_NITER")*n_conf):
             # choose new state
-            
+
 
             # evaluate
 
