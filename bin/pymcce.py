@@ -5,6 +5,7 @@ import os
 import numpy as np
 import shutil
 import random
+import gzip
 
 Delta_PW_warning = 0.1
 ROOMT = 298.15
@@ -160,6 +161,7 @@ class Conformer:
         self.iConf = int(fields[0])
         self.confname = fields[1]
         self.flag = fields[2].lower()
+        self.on = False
         self.occ = float(fields[3])
         self.crg = float(fields[4])
         self.em0 = float(fields[5])
@@ -232,7 +234,7 @@ class MC_Protein:
                 sys.exit()
             occurrence = confnames.count(name)
             if occurrence > 1:
-                print("      ERROR: Conformer %s occurred %d times" % occurrence)
+                print("      ERROR: Conformer %s occurred %d times" % (name, occurrence))
                 sys.exit()
         return head3list, confnames
 
@@ -443,28 +445,29 @@ def mc_sample(prot, T=298.15, ph=7.0, eh=0.0):
 
     # loop independent runs
     n_conf = sum([len(x) for x in prot.free_residues])
-
     runs = env.prm["MONTE_RUNS"]
     for i in range(runs):
+        fname = "ph%.1f-eh%.0f-run%02d.ms" % (ph, eh, i)
+        fh = open(fname, "w")
+
         # randomize a state
         fixed_on_confs = [ic for ic in prot.fixed_conformers if prot.head3list[ic].occ > 0.001]
         state = [random.choice(x) for x in prot.free_residues]
 
         # obtain a complete state
         complete_state = fixed_on_confs + state
-        fname = "ph%.1f-eh%.0f-run%02d.ms" % (ph,eh,i)
-        fh = open(fname, "w")
         fh.write("START: %s\n" % " ".join(["%d" % x for x in complete_state]))
 
         # MC sampling
         for iterations in range(env.prm("MONTE_NITER")*n_conf):
+            old_state = 
             # choose new state
             
 
             # evaluate
+        fh.close()
 
 
-        fclose(fh)
     return
 
 
