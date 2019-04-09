@@ -3,9 +3,14 @@
 import sys
 import os
 import numpy as np
-
+import shutil
+import random
 
 Delta_PW_warning = 0.1
+ROOMT = 298.15
+PH2KCAL = 1.364
+KCAL2KT = 1.688
+KJ2KCAL = 0.239
 
 
 class Env:
@@ -17,6 +22,7 @@ class Env:
         self.fn_conflist2 = "head2.lst"
         self.fn_conflist3 = "head3.lst"
         self.energy_table = "energies"
+        self.mc_states = "microstates"
         self.prm = self.load_runprm()
         self.tpl = {}
         self.read_extra()
@@ -198,7 +204,7 @@ class MC_Protein:
         print("\n   Initializing Monte Carlo frame strcuture.")
         self.head3list, self.confnames = self.read_head3list()
         self.pairwise = self.read_pairwise()
-        self.fixed_conformers, self.free_residues = self.group_conformers()
+        self.fixed_conformers, self.free_residues, self.biglist = self.group_conformers()
         return
 
     def read_head3list(self):
@@ -292,7 +298,7 @@ class MC_Protein:
                         pw2))
                 pairwise[i][j] = pairwise[j][i] = (pw1 + pw2) / 2
 
-        return
+        return pairwise
 
     def group_conformers(self):
         fixed_conformers = []
@@ -316,7 +322,7 @@ class MC_Protein:
         # if only one conformer is left:
         # the lone conformer is set to "t 1.00", and this conformer and this residue will be "fixed"
         # else:
-        #        this residue is "free" and occ of conformers is 0.
+        # this residue is "free" and occ of conformers is 0.
         # otherwise:
         #    partial fixed occupancy not allowed
 
@@ -355,8 +361,7 @@ class MC_Protein:
                                     i].confname,
                                 self.head3list[
                                     i].flag,
-                                self.head3list[
-                                    i].occ,
+                                self.head3list[i].occ,
                                 self.head3list[
                                     i].confname))
                             self.head3list[i].on = False
@@ -379,22 +384,87 @@ class MC_Protein:
                 print("      Exiting ...")
                 sys.exit()
 
-        return fixed_conformers, free_residues
+        # Make big list. A big list is the size of free residues. It contains other free residue index numbers that
+        # have big interactions
+        bigpw = env.prm["BIG_PAIRWISE"]
+        biglist = [[] for i in range(len(free_residues))]
+        for ir in range(len(free_residues)):
+            for jr in range(ir + 1, len(free_residues)):
+                next_jr = False
+                for ic in free_residues[ir]:
+                    if next_jr:
+                        break
+                    for jc in free_residues[jr]:
+                        if next_jr:
+                            break
+                        pw = self.pairwise[ic][jc]
+                        if abs(pw) >bigpw:
+                            biglist[ir].append(jr)
+                            biglist[jr].append(ir)
+                            next_jr = True
+
+        return fixed_conformers, free_residues, biglist
 
 
-def mc_sample(prot, T=monte_t, ph=ph, eh=eh):
+def mc_prepdir():
+    # prepare mc folder
+    if os.path.exists(env.mc_states):
+        if os.path.isdir(env.mc_states):
+            shutil.rmtree(env.mc_states)
+        else:
+            os.remove(env.mc_states)
+
+    os.mkdir(env.mc_states)
+
+    return
+
+
+def mc_sample(prot, T=298.15, ph=7.0, eh=0.0):
+    print("   Titration at T = %.2f, ph = %5.2f and eh = %.0f mv" % (T, ph, eh))
+
+    b = -KCAL2KT / (T / ROOMT)
+    n_free = len(prot.free_residues)
+    nflips = env.prm["MONTE_FLIPS"]
+
     # get self energy
-    # make big list
+    for ic in range(len(prot.head3list)):
+        conf = prot.head3list[ic]
+        E_ph = T / ROOMT * conf.nh * (ph - conf.pk0) * PH2KCAL
+        E_eh = T / ROOMT * conf.ne * (eh - conf.em0) * PH2KCAL / 58.0
+        prot.head3list[
+            ic].E_self = conf.vdw0 + conf.vdw1 + conf.epol + conf.tors + conf.dsolv + conf.extra + E_ph + E_eh
+
+        # mfe from fixed conformer
+        mfe = 0.0
+        for jc in prot.fixed_conformers:
+            mfe += prot.pairwise[ic][jc] * prot.head3list[jc].occ
+        # print(prot.head3list[ic].confname, mfe)
+        prot.head3list[ic].E_self_mfe = prot.head3list[ic].E_self + mfe
 
     # loop independent runs
-    # randomize a state
-    # obtain a complete state
-    #
-    # MC sampling
-        # choose new state
-        # evaluate
-    
+    n_conf = sum([len(x) for x in prot.free_residues])
 
+    runs = env.prm["MONTE_RUNS"]
+    for i in range(runs):
+        # randomize a state
+        fixed_on_confs = [ic for ic in prot.fixed_conformers if prot.head3list[ic].occ > 0.001]
+        state = [random.choice(x) for x in prot.free_residues]
+
+        # obtain a complete state
+        complete_state = fixed_on_confs + state
+        fname = "ph%.1f-eh%.0f-run%02d.ms" % (ph,eh,i)
+        fh = open(fname, "w")
+        fh.write("START: %s\n" % " ".join(["%d" % x for x in complete_state]))
+
+        # MC sampling
+        for iterations in range(env.prm("MONTE_NITER")*n_conf):
+            # choose new state
+            
+
+            # evaluate
+
+
+        fclose(fh)
     return
 
 

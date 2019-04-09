@@ -33,6 +33,8 @@ if __name__ == "__main__":
         print("   Please use analytical method ______ to analyze protein equilibrium0.")
         sys.exit()
 
+    mc_prepdir()
+    os.chdir(env.mc_states)
 
     for i in range(steps):
         # Set up pH and eh environment
@@ -47,6 +49,7 @@ if __name__ == "__main__":
                 "   Error: Titration type is %s. It has to be ph or eh in line (TITR_TYPE) in run.prm" % titration_type)
             sys.exit()
 
-        print("      Titration at ph = %5.2f and eh = %.0f mv" % (ph, eh))
 
         mc_sample(prot, T=monte_t, ph=ph, eh=eh)
+
+    os.chdir("../")
