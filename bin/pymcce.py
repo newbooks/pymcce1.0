@@ -1,11 +1,12 @@
 #!/usr/bin/env python
-
+#import numpypy
 import sys
 import os
 import numpy as np
 import shutil
 import random
 import gzip
+import math
 
 Delta_PW_warning = 0.1
 ROOMT = 298.15
@@ -33,7 +34,7 @@ class Env:
         float_values = ["EPSILON_PROT", "TITR_PH0", "TITR_PHD", "TITR_EH0", "TITR_EHD", "CLASH_DISTANCE",
                         "BIG_PAIRWISE", "MONTE_T", "MONTE_REDUCE"]
         int_values = ["TITR_STEPS", "MONTE_RUNS", "MONTE_TRACE", "MONTE_NITER", "MONTE_NEQ",
-                      "MONTE_NSTART", "MONTE_FLIPS", "NSTATE_MAX"]
+                      "MONTE_NSTART", "MONTE_FLIPS", "NSTATE_MAX", "MONTE_NEQ"]
         prm = {}
         print("   Loading %s" % self.runprm)
         lines = open(self.runprm).readlines()
@@ -203,7 +204,7 @@ class MC_Protein:
     """Monte Carlo Protein data structure."""
 
     def __init__(self):
-        print("\n   Initializing Monte Carlo frame strcuture.")
+        print("\n   Reading and interpreting input energy and conformer list.")
         self.head3list, self.confnames = self.read_head3list()
         self.pairwise = self.read_pairwise()
         self.fixed_conformers, self.free_residues, self.biglist = self.group_conformers()
@@ -407,6 +408,22 @@ class MC_Protein:
 
         return fixed_conformers, free_residues, biglist
 
+    def update_energy(self, T=298.15, ph=7.0, eh=0.0):
+        # get self energy
+        for ic in range(len(self.head3list)):
+            conf = self.head3list[ic]
+            E_ph = T / ROOMT * conf.nh * (ph - conf.pk0) * PH2KCAL
+            E_eh = T / ROOMT * conf.ne * (eh - conf.em0) * PH2KCAL / 58.0
+            self.head3list[
+                ic].E_self = conf.vdw0 + conf.vdw1 + conf.epol + conf.tors + conf.dsolv + conf.extra + E_ph + E_eh
+
+            # mfe from fixed conformer
+            mfe = 0.0
+            for jc in self.fixed_conformers:
+                mfe += self.pairwise[ic][jc] * self.head3list[jc].occ
+
+            self.head3list[ic].E_self_mfe = self.head3list[ic].E_self + mfe
+
 
 def mc_prepdir():
     # prepare mc folder
@@ -428,48 +445,146 @@ def mc_sample(prot, T=298.15, ph=7.0, eh=0.0):
     n_free = len(prot.free_residues)
     nflips = env.prm["MONTE_FLIPS"]
 
-    # get self energy
-    for ic in range(len(prot.head3list)):
-        conf = prot.head3list[ic]
-        E_ph = T / ROOMT * conf.nh * (ph - conf.pk0) * PH2KCAL
-        E_eh = T / ROOMT * conf.ne * (eh - conf.em0) * PH2KCAL / 58.0
-        prot.head3list[
-            ic].E_self = conf.vdw0 + conf.vdw1 + conf.epol + conf.tors + conf.dsolv + conf.extra + E_ph + E_eh
-
-        # mfe from fixed conformer
-        mfe = 0.0
-        for jc in prot.fixed_conformers:
-            mfe += prot.pairwise[ic][jc] * prot.head3list[jc].occ
-        # print(prot.head3list[ic].confname, mfe)
-        prot.head3list[ic].E_self_mfe = prot.head3list[ic].E_self + mfe
+    # get ph and eh patched self energy
+    prot.update_energy(T=T, ph=ph, eh=eh)
 
     # loop independent runs
     n_conf = sum([len(x) for x in prot.free_residues])
     runs = env.prm["MONTE_RUNS"]
     for i in range(runs):
         fname = "ph%.1f-eh%.0f-run%02d.ms" % (ph, eh, i)
-        fh = open(fname, "w")
+        #fh = open(fname, "w")
+        fh = gzip.open("%s.gz" % fname, "wb")
 
         # randomize a state
-        fixed_on_confs = [ic for ic in prot.fixed_conformers if prot.head3list[ic].occ > 0.001]
         state = [random.choice(x) for x in prot.free_residues]
 
         # obtain a complete state
-        complete_state = fixed_on_confs + state
-        fh.write("START: %s\n" % " ".join(["%d" % x for x in complete_state]))
+        line = "T=%f, ph=%f, eh=%f\n" % (T, ph, eh)
+        fh.write(line.encode())
+        line = "START: %s\n" % " ".join(["%d" % x for x in state])
+        fh.write(line.encode())
 
         # MC sampling
-        for iterations in range(env.prm("MONTE_NITER")*n_conf):
-            old_state = 
-            # choose new state
+        for iterations in range((env.prm["MONTE_NEQ"]+env.prm["MONTE_NITER"])*n_conf):
+            old_state = list(state)
 
+            # choose new state
+            ires = random.randrange(n_free)
+            #ires = np.random.randint(n_free)
+            while True:
+                new_conf = random.choice(prot.free_residues[ires])
+                if new_conf != state[ires]:
+                    break
+
+            old_conf = state[ires]
+            state[ires] = new_conf
+
+            dE = prot.head3list[new_conf].E_self_mfe - prot.head3list[old_conf].E_self_mfe
+            for j in range(n_free):
+                dE += prot.pairwise[new_conf][state[j]] - prot.pairwise[old_conf][state[j]]
+
+            # multiflip
+            if prot.biglist[ires]:
+                flip_probablity = 0.5
+                flip_counter = nflips
+                while flip_counter > 0:
+                    if random.random() < flip_probablity:
+                        iflip = random.choice(prot.biglist[ires])
+                        old_conf = state[iflip]
+                        new_conf = random.choice(prot.free_residues[iflip])
+                        state[iflip] = new_conf
+
+                        dE += prot.head3list[new_conf].E_self_mfe - prot.head3list[old_conf].E_self_mfe
+                        for j in range(n_free):
+                            dE += prot.pairwise[new_conf][state[j]] - prot.pairwise[old_conf][state[j]]
+
+                    flip_counter -= 1
+                    flip_probablity = flip_probablity / 2.0
 
             # evaluate
-        fh.close()
+            if dE < 0.0:
+                flip = True
+            elif random.random() < math.exp(b*dE):
+                flip = True
+            else:
+                flip = False
 
+            if flip:
+                new = set(state)
+                old = set(old_state)
+                on_confs = new - old
+                off_confs = old - new
+                line = ",".join(["-%d"%x for x in off_confs])+","+ ",".join(["%d"%x for x in on_confs])+"\n"
+                fh.write(line.encode())
+
+            else:
+                state = old_state
+                fh.write("\n".encode())
+
+        fh.close()
 
     return
 
+def validate_state(prot, state):
+    # each conf in state is in free_residues
+    # each res in free_residues has one and only one conf in state
+    # This makes sure the state is free residues only and garauntees correct energy
+    counters = [0 for x in prot.free_residues]  # on conf occurance in each residue, should be all 1
+    outsiders = []  # on conf not in free residues, should be empty
+
+    for ic in state:
+        found = False
+        for ir in range(len(prot.free_residues)):
+            if ic in prot.free_residues[ir]:
+                counters[ir] += 1
+                found = True
+        if not found:
+            outsiders.append(ic)
+
+    matched = True
+    for ir in range(len(counters)):
+        if counters[ir] == 0:
+            i_1stconf = prot.free_residues[ir][0]
+            confname = prot.confnames[i_1stconf]
+            resid = confname[:3] + confname[5:11]
+            print("Free residue %s doesn't have any on-conformer in microstate." % resid )
+            matched = False
+        elif counters[ir] > 1:
+            i_1stconf = prot.prot.free_residues[ir][0]
+            confname = prot.confnames[i_1stconf]
+            resid = confname[:3] + confname[5:11]
+            print("Free residue %s has multiple on-conformers in microstate." % resid )
+            matched = False
+
+    return matched
+
+
+def get_state_energy(prot, state):
+    E = 0.0
+
+    # all fixed self energy
+    for ic in prot.fixed_conformers:
+        E += prot.head3list[ic].E_self_mfe * prot.head3list[ic].occ
+
+    # minus one side of pw fixed to fixed
+    n_fixed_conformers = len(prot.fixed_conformers)
+    for ic in range(n_fixed_conformers -1):
+        for jc in range(ic+1, n_fixed_conformers):
+            E -= prot.pairwise[ic][jc]*prot.head3list[ic].occ*prot.head3list[jc].occ
+
+    # plus self on-conformers
+    for ic in state:
+        E += prot.head3list[ic].E_self_mfe
+
+    # plus pw on-conformer to on-conformer
+    for kc in range(len(state) - 1):
+        ic = state[kc]
+        for lc in range(kc+1, len(state)):
+            jc = state[lc]
+            E += prot.pairwise[ic][jc]
+
+    return E
 
 env = Env()
 

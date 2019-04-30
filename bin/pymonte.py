@@ -24,7 +24,7 @@ if __name__ == "__main__":
         total_states *= len(res)
 
     timerB = time.time()
-    print("   Done setting up MC in %1d seconds.\n" % (timerB - timerA))
+    print("   Done setting up MC in %d seconds.\n" % (timerB - timerA))
 
     if total_states > env.prm["NSTATE_MAX"]:
         print("   Total states %d > threshold %d" % (total_states, env.prm["NSTATE_MAX"]))
@@ -53,3 +53,6 @@ if __name__ == "__main__":
         mc_sample(prot, T=monte_t, ph=ph, eh=eh)
 
     os.chdir("../")
+
+    timerA = time.time()
+    print("   Done MC sampling in %d seconds.\n" % (timerA - timerB))

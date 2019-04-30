@@ -39,7 +39,7 @@ MODIFYING FOLLOWING ENTRIES REQUIRE ADVANCED KNOWLEDGE:
 
 step 4:
 5.0      Big pairwise threshold to make big list            (BIG_PAIRWISE)
-3        Number of flips                                    (MONTE_FLIPS)
+2        Number of flips, extra flip from biglist           (MONTE_FLIPS)
 298.15   Temperature                                        (MONTE_T)
 2000     Sampling = n_iter * confs                          (MONTE_NITER)
 6        Independent monte carlo sampling                   (MONTE_RUNS)
