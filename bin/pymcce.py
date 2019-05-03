@@ -569,8 +569,10 @@ def get_state_energy(prot, state):
 
     # minus one side of pw fixed to fixed
     n_fixed_conformers = len(prot.fixed_conformers)
-    for ic in range(n_fixed_conformers -1):
-        for jc in range(ic+1, n_fixed_conformers):
+    for i in range(n_fixed_conformers -1):
+        ic = prot.fixed_conformers[i]
+        for j in range(i+1, n_fixed_conformers):
+            jc = prot.fixed_conformers[j]
             E -= prot.pairwise[ic][jc]*prot.head3list[ic].occ*prot.head3list[jc].occ
 
     # plus self on-conformers
@@ -585,6 +587,47 @@ def get_state_energy(prot, state):
             E += prot.pairwise[ic][jc]
 
     return E
+
+
+
+def get_state_energy_details(prot, state):
+    E = 0.0
+
+    #print("Microstate: %s" % ",".join(["%d" % x for x in state]))
+    # all fixed self energy
+    for ic in prot.fixed_conformers:
+        E += prot.head3list[ic].E_self_mfe * prot.head3list[ic].occ
+        #print("%s %.3f" % (prot.head3list[ic].confname, prot.head3list[ic].occ))
+
+    # minus one side of pw fixed to fixed
+    n_fixed_conformers = len(prot.fixed_conformers)
+    for i in range(n_fixed_conformers -1):
+        ic = prot.fixed_conformers[i]
+        for j in range(i+1, n_fixed_conformers):
+            jc = prot.fixed_conformers[j]
+            E -= prot.pairwise[ic][jc]*prot.head3list[ic].occ*prot.head3list[jc].occ
+
+    #print(state, prot.fixed_conformers)
+    state = list(set(state) - set(prot.fixed_conformers))
+    state.sort()
+    print(state)
+
+    # plus self on-conformers
+    for ic in state:
+        E += prot.head3list[ic].E_self_mfe
+
+    # plus pw on-conformer to on-conformer
+    for kc in range(len(state) - 1):
+        ic = state[kc]
+        for lc in range(kc+1, len(state)):
+            jc = state[lc]
+            E += prot.pairwise[ic][jc]
+
+    return E
+
+
+
+
 
 env = Env()
 

@@ -41,9 +41,6 @@ def traceenergy(fname):
 
     fh = open(fname_energy, "w")
 
-    fh.write("%.3f\n" % E)
-
-    counter = 1
     state = set(state)
     for line in lines:
         line = line.strip().decode()
@@ -60,8 +57,6 @@ def traceenergy(fname):
             E = get_state_energy(prot, list(state))
 
         fh.write("%.3f\n" % E)
-
-        counter += 1
 
     fh.close()
 

@@ -41,7 +41,6 @@ step 4:
 5.0      Big pairwise threshold to make big list            (BIG_PAIRWISE)
 3        Number of flips                                    (MONTE_FLIPS)
 298.15   Temperature                                        (MONTE_T)
-800      Equalibration = n_eq * confs                       (MONTE_NEQ)
 2000     Sampling = n_iter * confs                          (MONTE_NITER)
 6        Independent monte carlo sampling                   (MONTE_RUNS)
 1000000  Maximum microstates for analytical solution        (NSTATE_MAX)
