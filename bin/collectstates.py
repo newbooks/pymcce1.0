@@ -4,15 +4,9 @@ Collect unique states from microstates directory.
 It reads in:
     all ms.gz files
 It writes out:
-    ph*-eh*-converge: divide the states into 6 runs x 20 groups, show average energy abd stdev of each
-    ph*-eh*-accessibles:   after discarding a percentage of eq runss, collect accessible states, energy,
+    ph*-eh*-accessibles.stats: divide the states into 6 runs x 20 groups, show average energy abd stdev of each
+    ph*-eh*-accessibles:  after discarding a percentage of eq runs, collect accessible states, energy,
     and counts
-    fort.38: occupancy table from sampling
-    fort.38.recovery: occupancy table from analytical solution
-    fort.38.xts: occupancy table with entropy correction
-    sumcrg: Total charge table from sampling
-    sumcrg.recovery: total charge table from analytical solution
-    sumcrg.xts: total charge table with entropy correction
 """
 
 import sys
@@ -29,7 +23,6 @@ class State_stat:
         return
 
 
-
 def collect_one(c, t):
     print("collecting microstates at %s and throw_away = %.2f%%. " % (c, t*100))
     # get files at this condition
@@ -41,6 +34,7 @@ def collect_one(c, t):
     all_states = {}
 
     std_stat = []
+    number_of_acc = []
     for f in files:
         std_stat_f = []
         print("   Processing file %s" % f)
@@ -80,14 +74,9 @@ def collect_one(c, t):
         for line in lines[:n_skip]:
             line = line.strip()
             if line:
-                delta = line.split(",")
-                for ic in delta:
-                    ic = int(ic)
-                    if ic < 0:
-                        ic = -ic
-                        state = state - {ic}
-                    else:
-                        state.add(ic)
+                off_confs, onconfs = conf_delta(line)
+                state = state - off_confs
+                state = state | onconfs
 
         # collect the rest states
         state_arr = list(state)
@@ -103,14 +92,10 @@ def collect_one(c, t):
         for line in lines[n_skip:]:
             line = line.strip()
             if line:
-                delta = line.split(",")
-                for ic in delta:
-                    ic = int(ic)
-                    if ic < 0:
-                        ic = -ic
-                        state = state - {ic}
-                    else:
-                        state.add(ic)
+                off_confs, onconfs = conf_delta(line)
+                state = state - off_confs
+                state = state | onconfs
+
                 # got an update
                 state_arr = list(state)
                 state_arr.sort()
@@ -130,13 +115,17 @@ def collect_one(c, t):
                 std_stat_f.append((Es.mean(), Es.std()))
                 counter_line = 0
         std_stat.append(std_stat_f)
+        number_of_acc.append(len(all_states))
 
-
-    fn_stats = "%s/%s-accessibles_stats" % (folder, c)
+    fn_stats = "%s/%s-accessibles.stats" % (folder, c)
     out_lines = ["Segments  %12s\n" % (" ".join([f.split("-")[-1].split(".")[0] for f in files]))]
     for i in range(20):
-        stat_str = ["%5.2f|%5.2f" % (std_stat[j][i][0], std_stat[j][i][1]) for j in range(len(files))]
+        stat_str = ["%5.2f/%-5.2f" % (std_stat[j][i][0], std_stat[j][i][1]) for j in range(len(files))]
         out_lines.append("%-12d %s\n" % (i+1, " ".join(stat_str)))
+
+    stat_str = " ".join(["%12d" % n for n in number_of_acc])
+    out_lines.append("#_of_accessibles: %s\n" % stat_str)
+
     open(fn_stats, "w").writelines(out_lines)
 
     fn_accessibles = "%s/%s-accessibles" % (folder, c)

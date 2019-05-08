@@ -45,15 +45,9 @@ def traceenergy(fname):
     for line in lines:
         line = line.strip().decode()
         if line:
-            delta = line.split(",")
-            for ic in delta:
-                ic = int(ic)
-                if ic < 0:
-                    ic = -ic
-                    state = state - {ic}
-                else:
-                    state.add(ic)
-
+            off_confs, onconfs = conf_delta(line)
+            state = state - off_confs
+            state = state | onconfs
             E = get_state_energy(prot, list(state))
 
         fh.write("%.3f\n" % E)

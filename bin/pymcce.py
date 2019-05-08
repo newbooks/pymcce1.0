@@ -550,7 +550,7 @@ def validate_state(prot, state):
             print("Free residue %s doesn't have any on-conformer in microstate." % resid )
             matched = False
         elif counters[ir] > 1:
-            i_1stconf = prot.prot.free_residues[ir][0]
+            i_1stconf = prot.free_residues[ir][0]
             confname = prot.confnames[i_1stconf]
             resid = confname[:3] + confname[5:11]
             print("Free residue %s has multiple on-conformers in microstate." % resid )
@@ -625,7 +625,28 @@ def get_state_energy_details(prot, state):
     return E
 
 
+def conf_delta(line):
+    off_confs = set()
+    on_confs = set()
+    delta = line.split(",")
+    for ic_s in delta:
+        if ic_s[0] == "-":
+            ic = -int(ic_s)
+            off_confs.add(ic)
+        else:
+            ic = int(ic_s)
+            on_confs.add(ic)
+    return off_confs, on_confs
 
+
+def deltaE(prot, state, off_confs, on_confs):
+    dE = 0.0
+    for ic in off_confs:
+        dE -= prot.head3list[ic].E_self_mfe
+    for j in range(n_free):
+        dE += prot.pairwise[new_conf][state[j]] - prot.pairwise[old_conf][state[j]]
+
+    return dE
 
 
 env = Env()
