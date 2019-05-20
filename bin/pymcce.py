@@ -207,6 +207,7 @@ class MC_Protein:
         self.head3list, self.confnames = self.read_head3list()
         self.pairwise = self.read_pairwise()
         self.fixed_conformers, self.free_residues, self.biglist = self.group_conformers()
+        self.report_residues()
         return
 
     def read_head3list(self):
@@ -423,6 +424,26 @@ class MC_Protein:
 
             self.head3list[ic].E_self_mfe = self.head3list[ic].E_self + mfe
 
+    def report_residues(self):
+        fname = "fixed_conformers.info"
+        lines = ["iConf CONFORMER     FL  occ    crg ne nH\n"]
+        for ic in self.fixed_conformers:
+            conf = self.head3list[ic]
+            lines.append("%5d %s %s %4.2f %6.3f %2d %2d\n" % (ic, conf.confname, conf.flag, conf.occ,
+                                                               conf.crg, conf.ne, conf.nh))
+        open(fname, "w").writelines(lines)
+
+        fname = "free_residues.info"
+        lines = ["iConf CONFORMER     FL    crg ne nH\n"]
+        for res in self.free_residues:
+            for ic in res:
+                conf = self.head3list[ic]
+                lines.append("%5d %s %s %6.3f %2d %2d\n" % (ic, conf.confname, conf.flag,
+                                                               conf.crg, conf.ne, conf.nh))
+            lines.append("%s\n" % ("."*35))
+
+        open(fname, "w").writelines(lines)
+        return
 
 def mc_prepdir():
     # prepare mc folder
@@ -461,11 +482,13 @@ def mc_sample(prot, T=298.15, ph=7.0, eh=0.0):
         # obtain a complete state
         line = "T=%f, ph=%f, eh=%f\n" % (T, ph, eh)
         fh.write(line.encode())
-        line = "START: %s\n" % " ".join(["%d" % x for x in state])
+        E = get_state_energy(prot, state)
+        line = "%.3f: %s\n" % (E, ",".join(["%d" % x for x in state]))
         fh.write(line.encode())
 
         # MC sampling
-        for iterations in range((env.prm["MONTE_NEQ"]+env.prm["MONTE_NITER"])*n_conf):
+
+        for iterations in range((env.prm["MONTE_NITER"])*n_conf):
             old_state = list(state)
 
             # choose new state
@@ -514,9 +537,10 @@ def mc_sample(prot, T=298.15, ph=7.0, eh=0.0):
                 old = set(old_state)
                 on_confs = new - old
                 off_confs = old - new
-                line = ",".join(["-%d"%x for x in off_confs])+","+ ",".join(["%d"%x for x in on_confs])+"\n"
+                E += dE
+                line = "%.3f:" % E + ",".join(["-%d"%x for x in off_confs])+","+ ",".join(["%d"%x for x in
+                                                                                          on_confs])+"\n"
                 fh.write(line.encode())
-
             else:
                 state = old_state
                 fh.write("\n".encode())
@@ -588,7 +612,6 @@ def get_state_energy(prot, state):
     return E
 
 
-
 def get_state_energy_details(prot, state):
     E = 0.0
 
@@ -625,26 +648,21 @@ def get_state_energy_details(prot, state):
     return E
 
 
-def conf_delta(line):
-    off_confs = set()
-    on_confs = set()
-    delta = line.split(",")
-    for ic_s in delta:
-        if ic_s[0] == "-":
-            ic = -int(ic_s)
-            off_confs.add(ic)
-        else:
-            ic = int(ic_s)
-            on_confs.add(ic)
-    return off_confs, on_confs
-
-
 def deltaE(prot, state, off_confs, on_confs):
+    """
+    Calculate delta E based on conformer difference, state is not altered
+    """
     dE = 0.0
     for ic in off_confs:
         dE -= prot.head3list[ic].E_self_mfe
-    for j in range(n_free):
-        dE += prot.pairwise[new_conf][state[j]] - prot.pairwise[old_conf][state[j]]
+        state = state - {ic}
+        for jc in list(state):
+            dE -= prot.pairwise[ic][jc]
+    for ic in on_confs:
+        dE += prot.head3list[ic].E_self_mfe
+        for jc in list(state):
+            dE += prot.pairwise[ic][jc]
+        state = state.add(ic)
 
     return dE
 
@@ -654,3 +672,4 @@ env = Env()
 if __name__ == "__main__":
     print("This is pymcce module.")
     print("Use pymonte.py to run mcce step 4.")
+    prot = MC_Protein()

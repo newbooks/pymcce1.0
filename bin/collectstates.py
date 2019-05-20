@@ -10,7 +10,6 @@ It writes out:
 """
 
 import sys
-from pymcce import *
 import gzip
 import os
 import glob
@@ -25,8 +24,9 @@ class State_stat:
 
 def collect_one(c, t):
     print("collecting microstates at %s and throw_away = %.2f%%. " % (c, t*100))
+    visited = 0
     # get files at this condition
-    folder = env.mc_states
+    folder = "microstates"
     pattern = os.path.join(folder, "%s-run*.ms.gz" % c)
     files = glob.glob(pattern)
     files.sort()
@@ -53,17 +53,13 @@ def collect_one(c, t):
         ph = mc_parm["ph"]
         eh = mc_parm["eh"]
 
-        prot.update_energy(T=T, ph=ph, eh=eh)
         line = lines.pop(0)
-        _, state_str = line.split(":")
+        E_str, state_str = line.split(":")
         if state_str:
-            state = [int(ic) for ic in state_str.split()]
+            state = [int(ic) for ic in state_str.split(",")]
+            E = float(E_str)
         else:
             print("   No initial state found. Quitting ...")
-            continue
-
-        if not validate_state(prot, state):
-            print("   Quiting ...")
             continue
 
         # Now we have initial state in state[], and the rest state deltas in lines[]
@@ -74,7 +70,9 @@ def collect_one(c, t):
         for line in lines[:n_skip]:
             line = line.strip()
             if line:
-                off_confs, onconfs = conf_delta(line)
+                fields = line.split(":")
+                E = float(fields[0])
+                off_confs, onconfs = conf_delta(fields[1])
                 state = state - off_confs
                 state = state | onconfs
 
@@ -82,7 +80,6 @@ def collect_one(c, t):
         state_arr = list(state)
         state_arr.sort()
         state_tup = tuple(state_arr)
-        E = get_state_energy(prot, state_arr)   # initial state
 
         n_record = len(lines[n_skip:])
         n_segment = int(n_record/20)
@@ -92,7 +89,9 @@ def collect_one(c, t):
         for line in lines[n_skip:]:
             line = line.strip()
             if line:
-                off_confs, onconfs = conf_delta(line)
+                fields = line.split(":")
+                E = float(fields[0])
+                off_confs, onconfs = conf_delta(fields[1])
                 state = state - off_confs
                 state = state | onconfs
 
@@ -105,7 +104,6 @@ def collect_one(c, t):
             if state_tup in all_states:
                 all_states[state_tup].counter += 1
             else:
-                E = get_state_energy(prot, state_arr)
                 all_states[state_tup] = State_stat(E)
 
             # stdev
@@ -114,17 +112,21 @@ def collect_one(c, t):
             if counter_line >= n_segment:
                 std_stat_f.append((Es.mean(), Es.std()))
                 counter_line = 0
+
+        visited += len(lines) - n_skip
+
         std_stat.append(std_stat_f)
-        number_of_acc.append(len(all_states))
+        number_of_acc.append((len(all_states), visited))
+
 
     fn_stats = "%s/%s-accessibles.stats" % (folder, c)
-    out_lines = ["Segments  %12s\n" % (" ".join([f.split("-")[-1].split(".")[0] for f in files]))]
+    out_lines = ["Segments  %s\n" % ("         ".join([f.split("-")[-1].split(".")[0] for f in files]))]
     for i in range(20):
-        stat_str = ["%5.2f/%-5.2f" % (std_stat[j][i][0], std_stat[j][i][1]) for j in range(len(files))]
+        stat_str = ["%9.2f/%-9.2f" % (std_stat[j][i][0], std_stat[j][i][1]) for j in range(len(files))]
         out_lines.append("%-12d %s\n" % (i+1, " ".join(stat_str)))
 
-    stat_str = " ".join(["%12d" % n for n in number_of_acc])
-    out_lines.append("#_of_accessibles: %s\n" % stat_str)
+    stat_str = " ".join(["%8d/%-10d" % (n[0], n[1]) for n in number_of_acc])
+    out_lines.append("#:            %s\n" % stat_str)
 
     open(fn_stats, "w").writelines(out_lines)
 
@@ -132,17 +134,30 @@ def collect_one(c, t):
     accessibles = sorted(all_states.items(), key=lambda kv:kv[1].E)
     out_lines = []
     for rs in accessibles:
-        out_lines.append("%s:%.2f, %d\n" %(rs[0], rs[1].E, rs[1].counter))
+        out_lines.append("%s:%.3f, %d\n" %(rs[0], rs[1].E, rs[1].counter))
     open(fn_accessibles, "w").writelines(out_lines)
 
     return
 
 
+def conf_delta(line):
+    off_confs = set()
+    on_confs = set()
+    delta = line.split(",")
+    for ic_s in delta:
+        if ic_s[0] == "-":
+            ic = -int(ic_s)
+            off_confs.add(ic)
+        else:
+            ic = int(ic_s)
+            on_confs.add(ic)
+    return off_confs, on_confs
 
 def collect(throwaway):
     # compose file names to read
-    folder = env.mc_states
+    folder = "microstates"
     files = [f for f in os.listdir(folder) if os.path.isfile(os.path.join(folder, f)) and f.endswith(".ms.gz")]
+    files.sort()
     # analyze how many ph-eh
     titr_conditions = []
     for f in files:
@@ -159,10 +174,8 @@ def collect(throwaway):
 
 
 if __name__ == "__main__":
-    prot = MC_Protein()
-    if len(sys.argv) < 2:
-        print("collectstates.py cutoff_percentage (default 0.1)")
-        print("          cutoff_percentage is the fraction of initial microstates to throw away")
-        sys.exit()
-    throwaway = float(sys.argv[1])
+    if len(sys.argv) >1:
+        throwaway = float(sys.argv[1])
+    else:
+        throwaway = 0.1
     collect(throwaway)

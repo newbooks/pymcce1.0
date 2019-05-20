@@ -1,11 +1,16 @@
 #!/usr/bin/env python
-
-print("Monte Carlo sampling:")
+"""
+This version of MC will write all states and corresponding energy. So analysis will not depend on the energy table.
+Output:
+    microstates/ph##.#-eh#-run##.ms.gz
+"""
 
 from pymcce import *
 import time
 
 if __name__ == "__main__":
+    print("Monte Carlo sampling")
+
     timerA = time.time()
     env.print_scaling()
     prot = MC_Protein()

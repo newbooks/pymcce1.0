@@ -20,10 +20,10 @@ def analyze_state(fname):
     prot.update_energy(T=T, ph=ph, eh=eh)
     print("Environment: pH = %.2f eh = %.0f Temperature = %.2f K" % (ph, eh, T))
     for line in lines:
-        state = [int(ic) for ic in line.split()]
+        state = [int(ic) for ic in line.split(",")]
 
         if validate_state(prot, state):
-            E = get_state_energy_details(prot, state)
+            E = get_state_energy(prot, state)
             print("E = %.2f" % E)
         else:
             print("Not a valid state, Quitting ...")
