@@ -120,7 +120,7 @@ def collect_one(c, t):
 
 
     fn_stats = "%s/%s-accessibles.stats" % (folder, c)
-    out_lines = ["Segments  %s\n" % ("         ".join([f.split("-")[-1].split(".")[0] for f in files]))]
+    out_lines = ["Segments          %s\n" % ("               ".join([f.split("-")[-1].split(".")[0] for f in files]))]
     for i in range(20):
         stat_str = ["%9.2f/%-9.2f" % (std_stat[j][i][0], std_stat[j][i][1]) for j in range(len(files))]
         out_lines.append("%-12d %s\n" % (i+1, " ".join(stat_str)))
