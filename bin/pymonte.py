@@ -3,6 +3,9 @@
 This version of MC will write all states and corresponding energy. So analysis will not depend on the energy table.
 Output:
     microstates/ph##.#-eh#-run##.ms.gz
+    free_residues.info
+    fixed_conformers.info
+    big_list.info
 """
 
 from pymcce import *
@@ -14,6 +17,7 @@ if __name__ == "__main__":
     timerA = time.time()
     env.print_scaling()
     prot = MC_Protein()
+    prot.report_biglist()
 
 
     monte_t = env.prm["MONTE_T"]

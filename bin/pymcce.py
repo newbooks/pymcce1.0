@@ -424,6 +424,16 @@ class MC_Protein:
 
             self.head3list[ic].E_self_mfe = self.head3list[ic].E_self + mfe
 
+    def report_biglist(self):
+        fname = "biglist.info"
+        lines = ["iRes iRes_with_big_interactions\n"]
+        for ires in range(len(self.biglist)):
+            biglist = ",".join(["%d" % x for x in self.biglist[ires]])
+            if biglist:
+                lines.append("%4d %s\n" % (ires, biglist))
+        open(fname, "w").writelines(lines)
+        return
+
     def report_residues(self):
         fname = "fixed_conformers.info"
         lines = ["iConf CONFORMER     FL  occ    crg ne nH\n"]
@@ -434,13 +444,15 @@ class MC_Protein:
         open(fname, "w").writelines(lines)
 
         fname = "free_residues.info"
-        lines = ["iConf CONFORMER     FL    crg ne nH\n"]
+        lines = ["iRes iConf CONFORMER     FL    crg ne nH\n"]
+        ires = 0
         for res in self.free_residues:
             for ic in res:
                 conf = self.head3list[ic]
-                lines.append("%5d %s %s %6.3f %2d %2d\n" % (ic, conf.confname, conf.flag,
+                lines.append("%4d %5d %s %s %6.3f %2d %2d\n" % (ires, ic, conf.confname, conf.flag,
                                                                conf.crg, conf.ne, conf.nh))
             lines.append("%s\n" % ("."*35))
+            ires += 1
 
         open(fname, "w").writelines(lines)
         return
@@ -673,3 +685,4 @@ if __name__ == "__main__":
     print("This is pymcce module.")
     print("Use pymonte.py to run mcce step 4.")
     prot = MC_Protein()
+    prot.report_biglist()
