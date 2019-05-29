@@ -51,10 +51,6 @@ def show_stateP(fname):
 
     plt.show()
 
-
-
-
-    plt.show()
     return
 
 
